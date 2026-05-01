@@ -1,0 +1,360 @@
+---
+title: "Progetto Finale di Modelli Statistici e Statistical Learning"
+author: "Gruppo 2"
+output:
+  word_document: default
+---
+# Sviluppo di un Modello Predittivo Regolarizzato per la Stima della Percentuale di Grasso Corporeo
+Il presente studio si pone l'obiettivo di sviluppare un modello predittivo per la stima della Percentuale di Grasso Corporeo (Body Fat Percentage), utilizzando come variabili esplicative una serie di misurazioni antropometriche e dati demografici. La percentuale di grasso corporeo è un indicatore cruciale per la salute e il benessere, ma la sua misurazione diretta tramite tecniche standard come la pesatura subacquea (Densitometria) è spesso complessa e costosa. L'intento è dimostrare come la regressione lineare possa essere ottimizzata attraverso tecniche di regolarizzazione (Lasso e Ridge Regression) per superare sfide statistiche intrinseche, fornendo uno strumento di stima pratico basato su misurazioni facilmente acquisibili (circonferenze corporee, peso ed età).
+
+Il nostro dataset è composto da 15 variabili. Oltre alla variabile dipendente Bodyfat, la percentuale di grasso corporeo determinata dall'Equazione di Siri, abbiamo Età, Peso, Altezza e Density, che rappresenta la densità corporea del soggetto determinato tramite pesatura subacquea. Il dataset è completato dalle misurazioni della circonferenza di Addome, Torace, Coscia, Collo, Fianchi, Ginocchio, Caviglia, Bicipite, Polso ed Avambraccio.
+
+# 1 Caricamento Librerie e Pre-Processing
+Iniziamo caricando le librerie necessarie per il nostro studio, e dopo aver caricato il dataset e rinominato le variabili, effettuiamo la trasformazione delle variabili Peso ed Altezza che erano espresse rispettivamente in libbre e pollici.
+```{r,warning=FALSE,message=FALSE}
+library(readr)
+library(car)
+library(ggplot2)
+library(GGally)
+library(e1071)
+library(gridExtra)
+library(corrplot)
+library(glmnet)
+library(lmtest)
+library(coefplot)
+library(dplyr)
+library(psych)
+library(RColorBrewer)
+dati <- read_csv("bodyfat.csv",show_col_types = FALSE)
+dati<- dati %>% rename(Densita = Density,Perc_grasso = BodyFat,Eta = Age,Peso = Weight,Altezza = Height,Collo = Neck,Torace = Chest,Addome = Abdomen,Fianchi = Hip,Coscia = Thigh,Ginocchio = Knee,Caviglia = Ankle,Bicipite = Biceps,Avambraccio = Forearm,Polso = Wrist)
+dati$Peso<-(dati$Peso)*0.453592
+dati$Altezza<-(dati$Altezza)*2.54
+dati <- dati[,-1]
+```
+Poiché la percentuale di grasso corporeo viene calcolata direttamente dalla densità corporea tramite l'Equazione di Siri, decidiamo di eliminare questa variabile dal dataset.
+
+## 1.1 Ricerca dei missing e Summary
+```{r}
+missing_values <- colSums(is.na(dati))
+print(missing_values)
+summary(dati)
+```
+L'output della funzione conferma che non sono presenti valori mancanti in nessuna delle variabili del dataset. 
+Da una prima analisi descrittiva si osserva tuttavia una variabilità elevata in diverse variabili, il che suggerisce la potenziale presenza di outliers. Si procede dunque con la ricerca e la gestione di questi valori.
+
+## 1.2 Ricerca outliers
+Per prima cosa eseguiamo una matrice di scatterplot per visualizzare contemporaneamente le correlazioni lineari e la forma distributiva delle variabili.
+```{r, fig.width=18, fig.height=18}
+pairs.panels(dati,method = "pearson",hist.col = "#00AFBB", density = TRUE,ellipses = TRUE, lm = TRUE, stars = TRUE,font.labels = 2,main = "Analisi Correlazione Pre-Pulizia",gap = 0.5,jiggle = TRUE,,cex.main = 2.5,cex.cor = 1.2)
+```
+
+Dallo scatterplot risulta evidente come i dati siano fortemente correlati, e che alcune variabili sono molto asimmetriche. Passiamo cosi al calcolo dell'indice di asimmetria per tutte le variabili.
+```{r,fig.width=12, fig.height=8}
+Asimmetria<- apply(dati, 2, skewness)
+dtasimmetria<- data.frame(Variabile = names(Asimmetria), Asimettria = Asimmetria)
+ggplot(dtasimmetria, aes(x = reorder(Variabile, Asimmetria), y = Asimmetria, fill = Asimmetria > 0)) +geom_bar(stat = "identity", color = "black") + geom_text(aes(label = round(Asimmetria, 2), vjust = ifelse(Asimmetria > 0, -0.5,1.5)),size = 5) +scale_fill_manual(values = c("TRUE" = "#00AFBB", "FALSE" = "#E7B800"),labels = c("Negativa", "Positiva")) + geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +theme_minimal() +theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),legend.position = "bottom",legend.title = element_blank()) +labs(title = 'Coefficiente di Asimmetria (Skewness) delle Variabili', x = 'Variabili',  y = 'Coefficiente di Asimmetria')
+```
+
+Il grafico mostra l'asimmetria delle variabili, ordinate in modo crescente, e conferma i nostri sospetti. I valori elevati di asimmetria, specialmente in variabili chiave come Caviglia, Fianchi e Peso, indicano che il dataset è pesantemente influenzato dagli outliers.
+
+Plottiamo ora i boxplot delle variabili più asimmetriche per un'ulteriore conferma visiva della presenza di outliers e per identificare i valori anomali che verranno rimossi.
+
+```{r}
+p1 <- ggplot(dati, aes(y = Caviglia , x = "")) + 
+  geom_boxplot(fill = "00AFBB", color = "black", outlier.colour = "red", outlier.size = 3) + 
+  theme_minimal(base_size = 12) +
+  labs(title = "Caviglia", y = "Circonferenza (cm)", x = "")+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+p2 <- ggplot(dati, aes(y = Addome, x = "")) + 
+  geom_boxplot(fill = "00AFBB", color = "black", outlier.colour = "red", outlier.size = 3) + 
+  theme_minimal(base_size = 12) +
+  labs(title = "Addome", y = "Circonferenza (cm)", x = "")+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+p3 <- ggplot(dati, aes(y = Peso, x = "")) + 
+  geom_boxplot(fill = "00AFBB", color = "black", outlier.colour = "red", outlier.size = 3) + 
+  theme_minimal(base_size = 12) +
+  labs(title = "Peso", y = "Chilogrammi (KG)", x = "")+
+ theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+
+p4 <- ggplot(dati, aes(y = Fianchi, x = "")) + 
+  geom_boxplot(fill = "00AFBB", color = "black", outlier.colour = "red", outlier.size = 3) + 
+  theme_minimal(base_size = 12) +
+  labs(title = "Fianchi", y = "Circonferenza (cm)", x = "")+
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 14))
+grid.arrange(p1, p2, p3, p4, nrow = 2, ncol = 2)
+```
+
+## 1.3 Rimozione Outliers
+Data la presenza di questi outliers, per creare un modello predittivo robusto e generalizzabile, si rende indispensabile un intervento di pulizia. 
+Abbiamo scelto di implementare una funzione personalizzata che identifica e rimuove gli outliers basandosi sulla Deviazione Standard ($\sigma$), assumendo che i valori che cadono troppo lontano dalla media siano anomalie.
+Abbiamo scelto k = 3 in modo che gli intervalli tipici basati sulla Deviazione Standard restituiscano il 99% delle osservazioni.
+```{r}
+remove_outliers_sd <- function(data, k) {
+  clean_data <- data
+  for (col in names(data)) {
+    if (is.numeric(data[[col]])) {
+      mean_val <- mean(data[[col]], na.rm = TRUE)
+      sd_val <- sd(data[[col]], na.rm = TRUE)
+      lower_bound <- mean_val - k * sd_val
+      upper_bound <- mean_val + k * sd_val
+      clean_data <- clean_data[clean_data[[col]] >= lower_bound & clean_data[[col]] <= upper_bound, ]
+    }
+  }
+  return(clean_data)}
+k=3
+clean_dati <- remove_outliers_sd(dati, k)
+```
+Dopo aver applicato il metodo di rimozione degli outliers verifichiamo l'impatto di tale intervento sulla distribuzione delle variabili più problematiche.
+A tal fine, presentiamo gli Istogrammi con curva di Densità e il nuovo calcolo del Coefficiente di Asimmetria sul dataset filtrato, per dimostrare che le distribuzioni si sono avvicinate a una maggiore simmetria e Normalità.
+```{r,fig.width=12, fig.height=8,warning=FALSE}
+sp1 <- ggplot(clean_dati, aes(x = Addome)) + 
+  geom_histogram(aes(y=..density..), bins = 40, fill = 'skyblue') +
+  geom_density(color = 'blue') +
+  ggtitle('Distribuzione di Coscia') +
+  theme_minimal()
+
+sp2 <- ggplot(clean_dati, aes(x = Caviglia)) + 
+  geom_histogram(aes(y=..density..), bins = 40, fill = 'lightcoral') +
+  geom_density(color = 'red') +
+  ggtitle('Distribuzione di Caviglia') +
+  theme_minimal()
+
+sp3 <- ggplot(clean_dati, aes(x = Peso)) + 
+  geom_histogram(aes(y=..density..), bins = 40, fill = 'gold') +
+  geom_density(color = 'darkorange') +
+  ggtitle('Distribuzione di Peso') +
+  theme_minimal()
+
+sp4 <- ggplot(clean_dati, aes(x = Fianchi)) + 
+  geom_histogram(aes(y=..density..), bins = 40, fill = 'mediumseagreen') +
+  geom_density(color = 'green') +
+  ggtitle('Distribuzione di Fianchi') +
+  theme_minimal()
+grid.arrange(sp1, sp2, sp3, sp4, nrow = 2, ncol = 2)
+```
+
+```{r,fig.width=12, fig.height=8}
+Asimmetria_2<- apply(clean_dati, 2, skewness)
+dtasimmetria_2<- data.frame(Variabile = names(Asimmetria_2), Skewness = Asimmetria_2)
+ggplot(dtasimmetria_2, aes(x = reorder(Variabile, Asimmetria_2), y = Asimmetria_2, fill = Asimmetria_2 > 0)) +geom_bar(stat = "identity", color = "black") + geom_text(aes(label = round(Asimmetria_2, 2),  vjust = ifelse(Asimmetria_2 > 0, -0.5,1.5)),size = 5) +scale_fill_manual(values = c("TRUE" = "#00AFBB", "FALSE" = "#E7B800"),labels = c("Negativa", "Positiva")) + geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),legend.position = "bottom",legend.title = element_blank())+ labs(title = 'Coefficiente di Asimmetria Post-Pulizia', x = 'Variabili',  y = 'Coefficiente di Asimmetria')
+```
+
+Il ricalcolo del Coefficiente di Asimmetria dopo la rimozione degli outliers dimostra l'efficacia dell'intervento di pulizia e conclude la fase di preparazione dei dati.
+
+# 2 Multicollinearità
+La fase di pulizia ha stabilizzato le distribuzioni univariate. Tuttavia, l'analisi bivariata preliminare aveva già sollevato il problema della Multicollinearità, un fenomeno intrinseco ai dati antropometrici. La multicollinearità rende i coefficienti del modello instabili e difficili da interpretare, compromettendo l'inferenza statistica.
+Per quantificare formalmente e visualizzare la correlazione tra le variabili predittive, procediamo con l'analisi della matrice di correlazione e i test diagnostici.
+```{r, fig.height=9, fig.width=9}
+cor<- cor(clean_dati)
+corrplot(cor, method = "color",type = "upper",order = "hclust",col =colorRampPalette(rev(brewer.pal(n = 7, name = "RdBu")))(8),addrect = 3,tl.col = "black",tl.srt = 45,tl.cex = 1.0,addCoef.col = "black",number.cex = 0.8,diag = FALSE)
+
+```
+
+Si può notare, anche senza effettuare i relativi test, che quasi tutte le variabili mostrano correlazioni significative; Tuttavia, l'esclusione di tali variabili non è giustificata da un punto di vista scientifico. 
+
+## 2.1 Indici di Correlazione
+Nonstante la multicollinearità sia già evidente, effettuiamo comunque il calcolo del condition number, del Vif e della Tollerance.
+
+## 2.2 Condition Number
+Iniziamo calcolando il Condition number. Costriuamo la matrice disegno, calcoliamo gli autovalori e gli autovettori e poi il condition number.
+```{r}
+subset_regressori <- subset(clean_dati, select = -1)
+X <- as.matrix(cbind(rep(1, nrow(clean_dati)), subset_regressori)) 
+autoval<-eigen(t(X)%*%X) 
+condition.number<-sqrt(max(autoval$values)/min(autoval$values))
+print(condition.number)
+```
+Il condition number ha un valore elevatissimo, di parecchio sopra il 30 che è considerato come valore di riferimento quantomeno pratico. 
+Si rende perciò necessario l'utilizzo di tecniche di regolarizzazione per trattare il serio problema della multicollinearità che presentano le variabili esplicative del dataset.
+
+## 2.3 $\text{VIF}$ (Variance Inflation Factor)
+Il $\text{VIF}$ (Variance Inflation Factor) è la metrica più comunemente utilizzata per quantificare l'entità della multicollinearità, misurando di quanto la varianza di un coefficiente di regressione è "gonfiata" a causa della correlazione con gli altri predittori nel modello. Un $\text{VIF}$ superiore a $5$ (o in alcuni contesti, $10$) è considerato problematico.
+```{r}
+mfull <- lm(Perc_grasso ~  Eta + Peso + Altezza + Collo + Torace + Addome + Fianchi + Coscia + Ginocchio + Caviglia + Bicipite + Avambraccio + Polso, data = clean_dati)
+summary(mfull)
+vif_values <- vif(mfull)
+print(vif_values)
+```
+I valori più allarmanti si riscontrano nelle circonferenze corporee centrali e nel peso: Peso ($\mathbf{43.24}$), Fianchi ($\mathbf{11.51}$), Addome ($\mathbf{10.85}$), e Torace ($\mathbf{9.73}$).
+
+## 2.4 Tollerance
+La Tollerance è semplicemente l'inverso del $\text{VIF}$ ($\text{Tolleranza} = 1/\text{VIF}$). Valori di Tolleranza vicini a zero (inferiori a $0.1$ o $0.2$) indicano una grave multicollinearità.
+```{r}
+toll_values<-1/vif(mfull)
+print(toll_values)
+```
+Ovviamnente i valori più bassi si riscontrano in Peso ($\mathbf{0.023}$), Fianchi ($\mathbf{0.087}$), Addome ($\mathbf{0.092}$) e Torace ($\mathbf{0.103}$).
+
+## 2.5 Indice di determinazione ($\text{R}^2$)
+L'indice $\text{R}^2$ calcolato per ogni predittore ($\text{R}^2 = (\text{VIF}-1)/\text{VIF}$) indica la frazione di varianza del singolo predittore che è spiegata dagli altri predittori.
+```{r}
+rquadro<-(vif(mfull)-1)/vif(mfull)
+print(rquadro)
+```
+Quasi tutti i regressori presentano valori maggiori  di 0.7, quindi è assodata la presenza di multicollinearità nel nostro Dataset. Si rende perciò necessario l'utilizzo di tecniche di regolarizzazione per trattare il serio problema della multicollinearità.
+
+# 3 Diagnostica dell'Eteroschedasticità
+Dopo aver affrontato il problema della multicollinearità, la diagnostica successiva riguarda l'assunzione di Omoschedasticità del modello OLS.
+
+L'Omoschedasticità è l'assunzione chiave per cui la varianza degli errori è costante per tutti i livelli dei valori predetti. La violazione di questa assunzione si chiama Eteroschedasticità.
+L'Eteroschedasticità, se presente, non invalida la stima dei coefficienti, ma rende inaffidabili gli Errori Standard e, di conseguenza, i $p\text{-value}$ e gli intervalli di confidenza. Per questo motivo, procediamo alla sua verifica, iniziando con un'analisi grafica dei residui ($\text{res}_1$) in funzione dei valori predetti ($\text{fit}_1$).
+```{r}
+res1<-resid(mfull)
+fit1<-fitted(mfull)
+plot(fit1,res1)
+```
+
+Da un analisi grafica preliminare non sembra che i residui abbiano un andamento particolare. Effettuiamo comunque i test di Breusch-Pagan e di White per verificarlo.
+
+## 3.1 Test di Breusch-Pagan
+Il Test di Breusch-Pagan (BP) è un test formale che verifica l'ipotesi nulla ($\mathbf{H_0}$) di omoschedasticità (la varianza degli errori è costante) contro l'ipotesi alternativa ($\mathbf{H_1}$) che la varianza sia una funzione lineare delle variabili esplicative ($\text{X}$).
+```{r}
+res12<-res1^2 
+modres12<-lm(res12~Eta + Peso + Altezza + Collo + Torace + Addome + Fianchi + Coscia + Ginocchio + Caviglia + Bicipite + Avambraccio + Polso, data = clean_dati)
+summary(modres12)
+```
+## 3.2 Test di White
+Il Test di White è un test di eteroschedasticità più generale e robusto del Breusch-Pagan, in quanto non assume una forma specifica per l'eteroschedasticità.
+Il test di White regredisce i quadrati dei residui ($\text{res}_1^2$) sui valori predetti ($\text{fit}_1$) e sui loro quadrati ($\text{fit}_1^2$). In questo modo, l'ipotesi nulla di omoschedasticità viene testata contro la possibilità che la varianza sia una funzione non lineare dei valori predetti. È particolarmente utile quando si sospetta una relazione quadratica o complessa.
+```{r}
+fit1<-fitted(mfull)
+fit12<-fit1^2
+modresW<-lm(res12~fit1+fit12)
+summary(modresW)
+```
+Poiché il $\mathbf{p\text{-value}\ (0.1349)}$ del Test di Breusch-Pagan ed il $\mathbf{p\text{-value}\ (0.9008)}$ del Test di WWhite sono entrambi maggiori della soglia di significatività, i risultati sono concordi e indicano che non ci sono prove statisticamente significative per concludere che il modello sia affetto da Eteroschedasticità.
+Proseguiamo dunque con l'addestramento del modello e l'applicazione delle tecniche di regolarizzazione.
+
+# 4 Addestramento del modello predittivo 
+Il set di dati pulito ($\text{clean\_dati}$) viene suddiviso in Training Set ($\mathbf{75\%}$) e Test Set ($\mathbf{25\%}$), e viene settato un seme per garantire la riproducibilità e si stima il modello OLS completo utilizzando esclusivamente il Training Set.
+```{r}
+set.seed(100)
+index=sample(1:nrow(clean_dati),0.75*nrow(clean_dati))
+trainRW = clean_dati[index,]
+testRW = clean_dati[-index,]
+dim(trainRW)
+dim(testRW)
+mtrainRW<-lm(Perc_grasso ~  Eta + Peso + Altezza + Collo + Torace + Addome + Fianchi + Coscia + Ginocchio + Caviglia + Bicipite + Avambraccio + Polso, data=trainRW)
+summary(mtrainRW)
+```
+Per valutare oggettivamente il modello (sia l'OLS che i successivi modelli regolarizzati), definiamo le metriche di errore standard: l'$\text{MSE}$ (Mean Squared Error) e l'$\text{RMSE}$ (Root Mean Squared Error).
+```{r}
+mse = function(actual, predicted) {
+  mean((actual - predicted) ^ 2) }
+
+rmse = function(actual, predicted) {
+  sqrt(mean((actual - predicted) ^ 2)) }
+```
+
+```{r}
+(mseTRAIN<-mse(actual = trainRW$Perc_grasso, predicted = predict(mtrainRW, trainRW)))
+
+(rmseTRAIN<-rmse(actual = trainRW$Perc_grasso, predicted = predict(mtrainRW, trainRW)))
+
+(mseTEST<-mse(actual = testRW$Perc_grasso, predicted = predict(mtrainRW, testRW)))
+
+(rmseTEST<-rmse(actual = testRW$Perc_grasso, predicted = predict(mtrainRW, testRW)))
+```
+In base ai valori di $\text{MSE}$ e $\text{RMSE}$ risultanti, il Modello OLS cattura efficacemente la relazione sottostante nel set di dati. L'errore sul Test Set ($\text{RMSE}_{\text{TEST}} = 4.41$) è relativamente basso rispetto alla variabilità complessiva della $\text{Perc\_grasso}$, e la differenza modesta tra $\text{RMSE}_{\text{TRAIN}}$ e $\text{RMSE}_{\text{TEST}}$ suggerisce che il modello generalizza bene e non soffre di grave overfitting in questa fase. Nonostante questo, l'affidabilità dei suoi parametri interni è compromessa dalla multicollinearità riscontrata in precedenza. Applichiamo ora le tecniche di regolarizzazione. 
+
+# 5 Regolarizzazione
+Il pacchetto glmnet richiede che i dati di input siano formattati come matrici di design (matrici di predittori) e vettori della variabile di risposta.
+```{r}
+X_train <- subset(trainRW, select = -c(Perc_grasso))
+y_train <- trainRW$Perc_grasso
+X_test <- subset(testRW, select = -c(Perc_grasso))
+y_test <- testRW$Perc_grasso
+```
+Passiamo ora alle tecniche vere e proprie. Per trovare il modello ottimale in termini di stabilità e previsione, esploreremo lo spettro dell'Elastic Net $(\mathbf{EN})$ variando il parametro di mixing $\mathbf{\alpha}$: partiremo dalla Lasso Regression ($\mathbf{\alpha = 1}$), esploreremo poi l'Elastic Net nelle configurazioni intermedie ($\mathbf{\alpha = 0.5}$ e $\mathbf{\alpha = 0.1}$), per finire con la Ridge Regression ($\mathbf{\alpha = 0}$).
+
+## 5.1 Lasso
+```{r}
+par(mar = c(5, 4, 7, 2) + 0.1)
+bf1<- glmnet(as.matrix(X_train), y_train, alpha =1)
+plot(bf1, main="Traccia dei Coefficienti - Lasso (α = 1)",xvar="lambda",label=TRUE,lwd=2)
+loocvl=cv.glmnet(as.matrix(X_train), y_train, nfolds=nrow(X_train) ,grouped=FALSE, alpha=1) 
+plot(loocvl,main = "Cross-Validation del Modello Lasso")
+(bestLambda.bf1<-loocvl$lambda.min)
+loocvl.mod=glmnet(as.matrix(X_train), y_train,alpha=1,lambda=bestLambda.bf1)
+coef(loocvl.mod)[,1]
+par(mar = c(5, 4, 4, 2) + 0.1)
+```
+## 5.2 Elastic Net (α=0.5)
+```{r}
+par(mar = c(5, 4, 7, 2) + 0.1)
+bf.5<-glmnet(as.matrix(X_train), y_train, alpha=0.5)
+plot(bf.5, main="Traccia dei Coefficienti - EN (α = 0.5)",xvar="lambda",label=TRUE,lwd=2)
+loocv.5=cv.glmnet(as.matrix(X_train), y_train, nfolds=nrow(X_train) ,grouped=FALSE, alpha=0.5) 
+plot(loocv.5,main = "Cross-Validation del Modello EN(0.5)")
+(bestLambda.bf.5<-loocv.5$lambda.min)
+loocv.5.mod=glmnet(as.matrix(X_train), y_train,alpha=0.5,lambda=bestLambda.bf.5)
+coef(loocv.5.mod)[,1]
+par(mar = c(5, 4, 4, 2) + 0.1)
+```
+## 5.3 Elastic Net (α=0.1)
+```{r}
+par(mar = c(5, 4, 7, 2) + 0.1)
+bf.1<-glmnet(as.matrix(X_train), y_train, alpha=0.1)
+plot(bf.1, main="Traccia dei Coefficienti - EN (α = 0.1)",xvar="lambda",label=TRUE,lwd=2)
+loocv.1=cv.glmnet(as.matrix(X_train), y_train, nfolds=nrow(X_train) ,grouped=FALSE, alpha=0.1) 
+plot(loocv.1,,main = "Cross-Validation del Modello EN(0.1)")
+(bestLambda.bf.1<-loocv.1$lambda.min)
+loocv.1.mod=glmnet(as.matrix(X_train), y_train,alpha=0.1,lambda=bestLambda.bf.1)
+coef(loocv.1.mod)[,1]
+par(mar = c(5, 4, 4, 2) + 0.1)
+```
+## 5.4 Ridge Regression
+```{r}
+par(mar = c(5, 4, 7, 2) + 0.1)
+bfr<-glmnet(as.matrix(X_train), y_train, alpha=0)
+plot(bfr, main="Traccia dei Coefficienti - Ridge Regression (α = 0) ",xvar="lambda",label=TRUE,lwd=2)
+loocvr=cv.glmnet(as.matrix(X_train), y_train, nfolds=nrow(X_train) ,grouped=FALSE, alpha=0) 
+plot(loocvr,main = "Cross-Validation del Modello Ridge")
+(bestLambda.bfr<-loocvr$lambda.min)
+loocvr.mod=glmnet(as.matrix(X_train), y_train,alpha=0,lambda=bestLambda.bfr)
+coef(loocvr.mod)[,1]
+par(mar = c(5, 4, 4, 2) + 0.1)
+```
+# 6 Confronti e Previsioni
+Dopo aver stimato i quattro modelli di regressione penalizzata (Lasso, Ridge ed Elastic Net con $\alpha=0.5$ e $\alpha=0.1$) e aver identificato il $\lambda_{\min}$ ottimale per ciascuno tramiteLeave-One-Out-Cross-Validation ($\text{LOOCV}$), si procede con il confronto finale. L'obiettivo è individuare quale configurazione di $\alpha$ ha ottenuto l'errore predittivo minimo ($\text{MSE}_{\min}$) sul Training Set.
+
+## 6.1 Confronti
+```{r}
+(mse.minLASSO <- loocvl$cvm[loocvl$lambda == loocvl$lambda.min])
+(mse.minEN05 <- loocv.5$cvm[loocv.5$lambda == loocv.5$lambda.min])
+(mse.minEN01 <- loocv.1$cvm[loocv.1$lambda == loocv.1$lambda.min])
+(mse.minRR <- loocvr$cvm[loocvr$lambda == loocvr$lambda.min])
+min(mse.minLASSO,mse.minEN05,mse.minRR,mse.minEN01)
+```
+```{r, warning=FALSE, fig.height=10,fig.width=10}
+valori_mse <- c(mse.minLASSO, mse.minRR , mse.minEN05, mse.minEN01)
+dataframe_mse <- data.frame(Modello = c("Lasso", "Ridge ", "En Aplha=0.5","En Aplha=0.1"),MSE = valori_mse)
+min_mse_value <- min(dataframe_mse$MSE)
+ggplot(dataframe_mse,  aes(x = reorder(Modello, MSE), y = MSE, color = (MSE == min_mse_value))) +geom_col(aes(fill = (MSE == min_mse_value)), width = 0.5,color = "black") + geom_text(aes(label = round(MSE, 3)), vjust = -0.5, size = 5, color = "black") + scale_fill_manual(values = c("FALSE" = "red", "TRUE" = "green")) +scale_color_manual(values = c("FALSE" = "red", "TRUE" = "green")) +theme_minimal() +theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5),axis.title = element_text(size = 14, face = "bold"),axis.text.x = element_text(size = 12),legend.position = "none" ) +labs(title = "Confronto MSE tramite LOOCV",subtitle = "Modelli ordinati per MSE crescente. Il modello Elastic Net (α=0.5) è il vincitore.",x = "Modello",y = "Errore Quadratico Medio (MSE)")
+```
+
+Anche se di poco, il modello migliore risulta essere l'Elastic Net con α=0.5
+Una volta identificato l'Elastic Net con $\mathbf{\alpha = 0.5}$ come il modello più performante ($\text{MSE}_{\min}$), si procede all'estrazione e all'analisi dei suoi coefficienti finali,per comprendere l'importanza relativa e la direzione dell'influenza di ciascun predittore sulla variabile target ($\text{Perc\_grasso}$) all'interno del modello. Il grafico seguente visualizza i coefficienti ($\mathbf{\beta}$) del modello Elastic Net calcolato al $\mathbf{\lambda_{\min}}$.
+```{r}
+coef_matrix <- as.matrix(coef(loocv.5, s = "lambda.min")) 
+df_coef <- data.frame(Variabile = rownames(coef_matrix),Valore = coef_matrix[,1]) %>%filter(Variabile != "(Intercept)") %>%arrange(desc(abs(Valore)))
+ggplot(df_coef, aes(x = reorder(Variabile, Valore), y = Valore, fill = Valore > 0)) +geom_bar(stat = "identity", color = "black", width = 0.7) + coord_flip() + scale_fill_manual(values = c("firebrick", "forestgreen"), labels = c("Correlazione Negativa","Correlazione Positiva")) + labs(title = "Importanza Variabili - Elastic Net α=0.5",subtitle = "Le variabili senza barra (valore 0) sono state eliminate dal modello",x = "", y = "Coefficiente Penalizzato",fill = "Direzione") + theme_minimal() +theme(legend.position = "bottom",panel.grid.major.y = element_blank() )
+```
+
+## 6.2 Previsioni
+L'ultima fase del progetto è la valutazione imparziale della sua capacità predittiva. Si utilizza il Test Set per calcolare le metriche di errore finali: l'$\text{MSE}$ e l'$\text{RMSE}$.
+```{r}
+pred_best_en <- predict(loocv.5, s = loocv.5$lambda.min, newx = as.matrix(X_test))
+mse_best_en <- mse(actual = y_test, predicted = pred_best_en)
+rmse_best_en <- rmse(actual = y_test, predicted = pred_best_en)
+cat("RMSE Elastic Net:    ", round(rmse_best_en, 4), "\n")
+cat("MSE Elastic Net:    ", round(mse_best_en, 4), "\n")
+```
+Il valore finale dell'$\text{RMSE}$ è $\mathbf{4.4063}$, poco più basso del risultato calcolato con l'OLS. Sebbene il miglioramento sia minimo ($\mathbf{0.0016}$), la Regolarizzazione ha avuto successo sia perchè ha diminuito l' $\text{RMSE}$, sià perchè lo fa con coefficienti stabili risolvendo il problema fondamentale della Multicollinearità.
+
+# Conclusioni
+Lo studio ha sviluppato con successo un modello di Regressione Penalizzata per la stima della Percentuale di Grasso Corporeo ($\text{Perc\_grasso}$), affrontando la multicollinearità severa intrinseca nei dati antropometrici.
+La metodologia di Cross-Validation ha identificato l'Elastic Net con $\mathbf{\alpha = 0.5}$ come il modello più performante ($\text{MSE} = 18.997$). La superiorità di questa configurazione ibrida conferma che,nel contesto del nostro set di dati , un approccio misto è più efficace delle tecniche pure.
+In sintesi, il progetto ha fornito uno strumento di stima robusto e interpretabile per la Percentuale di Grasso Corporeo, validato su dati non visti e immune all'instabilità causata dalla multicollinearità.
