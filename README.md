@@ -1,2 +1,34 @@
-# Predicting Body Fat Percentage: A Regularized Regression Approach
-This project aims to develop a robust predictive model for estimating Body Fat Percentage (BFP) using anthropometric measurements and demographic data. While BFP is a critical indicator of health and physical fitness, its direct measurement through gold-standard methods—such as underwater weighing (Densitometry)—is often logistically complex, time-consuming, and expensive.The core objective of this study is to demonstrate how Linear Regression can be optimized through regularization techniques to provide a practical, non-invasive estimation tool based on easily acquirable physical metrics.MethodologyTo address potential statistical challenges such as multicollinearity—frequent in anatomical data where body circumferences are highly correlated—this project implements and compares two primary regularization methods:Ridge Regression ($L_2$ Regularization): To manage multicollinearity by shrinking coefficients.Lasso Regression ($L_1$ Regularization): To perform automated feature selection and simplify the model by zeroing out less impactful variables.Dataset DescriptionThe model is trained on a comprehensive dataset consisting of 15 variables. The target variable is Bodyfat, calculated via Siri's Equation. The feature set includes:Demographics & Basics: Age, Weight, Height, and Body Density (determined via densitometry).Anatomical Circumferences: Abdomen, Chest, Thigh, Neck, Hips, Knee, Ankle, Bicep, Wrist, and Forearm.Key ObjectivesExploratory Data Analysis (EDA): Investigating the correlation between different body circumferences and overall fat percentage.Model Optimization: Tuning the regularization parameter ($\alpha$) to achieve the best bias-variance tradeoff.Comparative Analysis: Evaluating model performance using metrics such as R-squared ($R^2$), Mean Absolute Error (MAE), and Root Mean Squared Error (RMSE).By leveraging machine learning to refine traditional statistical methods, this project provides a scalable solution for health professionals to estimate body composition with high accuracy using only a measuring tape and a scale.
+# Body Fat Percentage Prediction using Regularized Regression
+
+## Overview
+This repository hosts a data science project focused on developing a predictive model to estimate **Body Fat Percentage (BFP)**. While BFP is a vital health metric, its gold-standard measurement via underwater weighing (Densitometry) is often expensive and inaccessible. 
+
+The goal of this study is to demonstrate how **Linear Regression**, optimized through **Lasso** and **Ridge** regularization, can provide an accurate and practical estimation tool using only non-invasive anthropometric measurements.
+
+## Project Objectives
+*   **Mitigate Multicollinearity:** Use regularization techniques to handle highly correlated anatomical data (e.g., body circumferences).
+*   **Model Optimization:** Compare **Lasso ($L_1$)** and **Ridge ($L_2$)** regression to find the best balance between complexity and predictive power.
+*   **Practical Application:** Create a model based on easily acquirable metrics like age, weight, and body measurements.
+
+## Dataset Description
+The model utilizes a dataset consisting of **15 variables**. The target variable is the Body Fat percentage determined by **Siri's Equation**.
+
+### Features:
+*   **Demographics:** Age, Weight, Height.
+*   **Physical Metrics:** Body Density (via densitometry).
+*   **Anatomical Circumferences:** Abdomen, Chest, Thigh, Neck, Hips, Knee, Ankle, Bicep, Wrist, and Forearm.
+
+## Methodology
+The workflow follows standard Data Science practices:
+1.  **Exploratory Data Analysis (EDA):** Visualizing correlations between body parts and fat percentage.
+2.  **Preprocessing:** Feature scaling and handling of potential outliers.
+3.  **Model Training:** Implementation of Linear, Ridge, and Lasso Regression.
+4.  **Evaluation:** Performance assessment using **$R^2$**, **MAE**, and **RMSE** metrics.
+
+## Key Results
+The study highlights how **Lasso Regression** effectively performs feature selection, identifying the most significant body circumferences for prediction, while **Ridge Regression** ensures stability by penalizing extreme coefficient values. This approach provides a reliable tool for health professionals to estimate body composition with high precision.
+
+## Technologies Used
+*   **Python** (Pandas, NumPy)
+*   **Scikit-Learn** (Linear Models, Preprocessing)
+*   **Matplotlib / Seaborn** (Data Visualization)
