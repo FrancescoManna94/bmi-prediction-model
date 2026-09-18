@@ -26,7 +26,7 @@ The workflow follows standard Data Science practices:
 4.  **Evaluation:** Performance assessment using **$R^2$**, **MAE**, and **RMSE** metrics.
 
 ## Key Results
-The study highlights how **Lasso Regression** effectively performs feature selection, identifying the most significant body circumferences for prediction, while **Ridge Regression** ensures stability by penalizing extreme coefficient values. This approach provides a reliable tool for health professionals to estimate body composition with high precision.
+The study highlights how **Lasso Regression** effectively performs feature selection, identifying the most significant body circumferences for prediction, while **Ridge Regression** ensures stability by penalizing extreme coefficient values.  Elastic Net (with $\alpha = 0.5$) is the winning predictive model, as it minimizes the Mean Squared Error (MSE), outperforming both individual Lasso and Ridge regressions. By effectively combining the feature selection capabilities of Lasso with the coefficient stability provided by Ridge, this balanced approach offers health professionals a highly precise and reliable tool for estimating body fat percentage. 
 
 ## Technologies Used
 *   **Python** (Pandas, NumPy)
