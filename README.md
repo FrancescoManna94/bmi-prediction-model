@@ -29,6 +29,8 @@ The workflow follows standard Data Science practices:
 The study highlights how **Lasso Regression** effectively performs feature selection, identifying the most significant body circumferences for prediction, while **Ridge Regression** ensures stability by penalizing extreme coefficient values.  Elastic Net (with $\alpha = 0.5$) is the winning predictive model, as it minimizes the Mean Squared Error (MSE), outperforming both individual Lasso and Ridge regressions. By effectively combining the feature selection capabilities of Lasso with the coefficient stability provided by Ridge, this balanced approach offers health professionals a highly precise and reliable tool for estimating body fat percentage. 
 
 ## Technologies Used
-*   **Python** (Pandas, NumPy)
-*   **Scikit-Learn** (Linear Models, Preprocessing)
-*   **Matplotlib / Seaborn** (Data Visualization)
+*   **R**: The primary programming language used for the development of the entire script.
+*   **glmnet**: Used for training, regularization, and cross-validation (LOOCV) of the Lasso, Ridge, and Elastic Net models.
+*   **dplyr / readr**: Used for dataset importation, cleaning, and structural manipulation.
+*   **ggplot2 / corrplot / GGally**: Used for exploratory data analysis (EDA), boxplot creation, distribution analysis, and correlation matrix visualization.
+*   **car / psych**: Used for in-depth statistical testing, including the calculation of multicollinearity (VIF) and skewness. 
